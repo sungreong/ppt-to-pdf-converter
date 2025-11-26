@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List, Tuple, Dict
+from pydantic import BaseModel, Field
 import subprocess
 import os
 import uuid
@@ -37,6 +38,74 @@ METADATA_DIR.mkdir(exist_ok=True)
 
 # 한국 시간대
 KST = pytz.timezone('Asia/Seoul')
+
+
+# 변환 옵션 모델
+class ConversionOptions(BaseModel):
+    """PDF 변환 옵션"""
+    quality: Optional[str] = Field(
+        default="default",
+        description="PDF 품질 (default, screen, ebook, printer, prepress)"
+    )
+    embed_fonts: Optional[bool] = Field(
+        default=True,
+        description="폰트 임베딩 여부"
+    )
+    compress_images: Optional[bool] = Field(
+        default=True,
+        description="이미지 압축 여부"
+    )
+    image_quality: Optional[int] = Field(
+        default=90,
+        ge=1,
+        le=100,
+        description="이미지 품질 (1-100)"
+    )
+    export_notes: Optional[bool] = Field(
+        default=False,
+        description="노트 포함 여부"
+    )
+    export_hidden_slides: Optional[bool] = Field(
+        default=False,
+        description="숨겨진 슬라이드 포함 여부"
+    )
+    use_tagged_pdf: Optional[bool] = Field(
+        default=True,
+        description="태그된 PDF 생성 (텍스트 추출 및 접근성 향상)"
+    )
+    export_bookmarks: Optional[bool] = Field(
+        default=False,
+        description="북마크 내보내기"
+    )
+    pdf_version: Optional[str] = Field(
+        default="1.7",
+        description="PDF 버전 (1.4, 1.5, 1.6, 1.7, 2.0)"
+    )
+
+
+# PDF 품질 프리셋
+PDF_QUALITY_PRESETS = {
+    "screen": {
+        "description": "화면 보기용 (저용량, 72dpi)",
+        "filter_data": "ReduceImageResolution=true:MaxImageResolution=72"
+    },
+    "ebook": {
+        "description": "전자책용 (중간 용량, 150dpi)",
+        "filter_data": "ReduceImageResolution=true:MaxImageResolution=150"
+    },
+    "printer": {
+        "description": "프린터용 (고품질, 300dpi)",
+        "filter_data": "ReduceImageResolution=true:MaxImageResolution=300"
+    },
+    "prepress": {
+        "description": "인쇄소용 (최고품질, 300dpi)",
+        "filter_data": "ReduceImageResolution=false"
+    },
+    "default": {
+        "description": "기본 설정",
+        "filter_data": ""
+    }
+}
 
 
 def load_metadata_index() -> Tuple[Dict[str, dict], Dict[str, dict]]:
@@ -285,8 +354,202 @@ async def delete_output(filename: str):
     }
 
 
+@app.get("/conversion-options")
+async def get_conversion_options():
+    """사용 가능한 변환 옵션 조회"""
+    return {
+        "pdf_quality_presets": PDF_QUALITY_PRESETS,
+        "options": {
+            "quality": {
+                "type": "string",
+                "default": "default",
+                "choices": list(PDF_QUALITY_PRESETS.keys()),
+                "description": "PDF 품질 프리셋"
+            },
+            "embed_fonts": {
+                "type": "boolean",
+                "default": True,
+                "description": "폰트 임베딩 (True: 폰트 포함, False: 폰트 미포함)"
+            },
+            "compress_images": {
+                "type": "boolean",
+                "default": True,
+                "description": "이미지 압축 여부"
+            },
+            "image_quality": {
+                "type": "integer",
+                "default": 90,
+                "range": [1, 100],
+                "description": "이미지 품질 (1-100)"
+            },
+            "export_notes": {
+                "type": "boolean",
+                "default": False,
+                "description": "발표자 노트 포함 여부"
+            },
+            "export_hidden_slides": {
+                "type": "boolean",
+                "default": False,
+                "description": "숨겨진 슬라이드 포함 여부"
+            },
+            "use_tagged_pdf": {
+                "type": "boolean",
+                "default": True,
+                "description": "태그된 PDF 생성 (텍스트 추출 및 접근성 향상)"
+            },
+            "export_bookmarks": {
+                "type": "boolean",
+                "default": False,
+                "description": "북마크 내보내기"
+            },
+            "pdf_version": {
+                "type": "string",
+                "default": "1.7",
+                "choices": ["1.4", "1.5", "1.6", "1.7", "2.0"],
+                "description": "PDF 버전"
+            }
+        }
+    }
+
+
 @app.post("/convert")
 async def convert_ppt(
+    file: UploadFile = File(...),
+    output_format: str = Query(default="pdf", description="출력 형식"),
+    use_tagged_pdf: bool = Query(default=True, description="태그된 PDF 생성 (텍스트 추출 향상)")
+):
+    """
+    PPT 파일을 지정된 형식으로 변환
+    
+    - **file**: 업로드할 PPT 파일 (.ppt, .pptx, .odp)
+    - **output_format**: 출력 형식 (pdf, odp, pptx, html)
+    - **use_tagged_pdf**: 태그된 PDF 생성 (텍스트 추출 및 접근성 향상, True/False)
+    
+    참고: LibreOffice headless 모드의 제한으로 인해 일부 고급 옵션은 지원되지 않습니다.
+    """
+    # 파일 확장자 검증
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_INPUT_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 입력 형식입니다. 허용된 형식: {', '.join(ALLOWED_INPUT_FORMATS)}"
+        )
+
+    # 출력 형식 검증
+    if output_format not in [fmt.lstrip(".") for fmt in ALLOWED_OUTPUT_FORMATS]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 출력 형식입니다. 허용된 형식: {', '.join([fmt.lstrip('.') for fmt in ALLOWED_OUTPUT_FORMATS])}"
+        )
+
+    # 고유한 파일명 생성
+    file_id = str(uuid.uuid4())
+    input_file = UPLOAD_DIR / f"{file_id}{file_ext}"
+    output_file = OUTPUT_DIR / f"{file_id}.{output_format}"
+
+    try:
+        # 파일 저장
+        with open(input_file, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        # LibreOffice 변환 옵션 구성
+        convert_options = []
+        
+        if output_format == "pdf":
+            # PDF 필터 옵션 구성
+            # 참고: LibreOffice headless 모드에서는 많은 옵션이 제대로 작동하지 않음
+            filter_options = []
+            
+            # 태그된 PDF (텍스트 추출 향상) - 작동 확인됨
+            if use_tagged_pdf:
+                filter_options.append("UseTaggedPDF=true")
+            
+            # 필터 옵션 조합
+            if filter_options:
+                filter_data = ":".join(filter_options)
+                # PPT/Impress 파일은 impress_pdf_Export 필터 사용
+                convert_format = f"pdf:impress_pdf_Export:{{{filter_data}}}"
+            else:
+                convert_format = "pdf"
+        else:
+            convert_format = output_format
+
+        # LibreOffice 변환 명령어
+        convert_cmd = [
+            "libreoffice",
+            "--headless",
+            "--convert-to", convert_format,
+            "--outdir", str(OUTPUT_DIR),
+            str(input_file)
+        ]
+
+        result = subprocess.run(
+            convert_cmd,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"변환 실패: {result.stderr}"
+            )
+
+        # 변환된 파일 확인
+        if not output_file.exists():
+            # LibreOffice는 원본 파일명을 기반으로 출력 파일명을 생성할 수 있음
+            base_name = input_file.stem
+            possible_output = OUTPUT_DIR / f"{base_name}.{output_format}"
+            if possible_output.exists():
+                output_file = possible_output
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail="변환된 파일을 찾을 수 없습니다."
+                )
+
+        # 원본 파일명 메타데이터 저장
+        metadata_file = METADATA_DIR / f"{output_file.name}.json"
+        metadata = {
+            "original_filename": file.filename,
+            "output_filename": output_file.name,
+            "file_id": file_id,
+            "output_format": output_format,
+            "conversion_options": {
+                "use_tagged_pdf": use_tagged_pdf
+            },
+            "created_at": datetime.now(KST).isoformat()
+        }
+        with open(metadata_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+        # 변환된 파일 반환
+        return FileResponse(
+            path=str(output_file),
+            filename=f"{Path(file.filename).stem}.{output_format}",
+            media_type="application/octet-stream"
+        )
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=500,
+            detail="변환 시간이 초과되었습니다."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"변환 중 오류 발생: {str(e)}"
+        )
+    finally:
+        # 임시 파일 정리
+        if input_file.exists():
+            input_file.unlink()
+
+
+
+@app.post("/convert_default")
+async def convert_ppt_default(
     file: UploadFile = File(...),
     output_format: str = "pdf"
 ):
