@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPT to PDF 변환기</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 30px 80px rgba(86, 91, 115, 0.25);
+            padding: 50px;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        .layout {
+            display: flex;
+            gap: 40px;
+        }
+
+        .main-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .side-column {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .drop-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 20px;
+            text-align: center;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .drop-zone:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .drop-zone.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .drop-zone-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .drop-zone-text {
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone-hint {
+            color: #999;
+            font-size: 14px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f2ff;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .file-name {
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .file-size {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .convert-btn {
+            width: 100%;
+            padding: 15px;
+            margin-top: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            display: none;
+        }
+
+        .convert-btn.show {
+            display: block;
+        }
+
+        .convert-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .convert-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .progress {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress.show {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #666;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .download-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s ease;
+        }
+
+        .download-btn:hover {
+            background: #218838;
+        }
+
+        .supported-formats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .supported-formats strong {
+            color: #333;
+        }
+
+        .file-list-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .fonts-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .section-subtitle {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        .section-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .font-count {
+            font-size: 13px;
+            color: #555;
+            background: #eef0ff;
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .refresh-btn.ghost {
+            background: transparent;
+            color: #667eea;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .file-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .file-list-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .refresh-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+        }
+
+        .file-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .file-item:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .file-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-item-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .file-item-meta {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .file-item-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: 15px;
+        }
+
+        .file-download-btn {
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+
+        .file-download-btn:hover {
+            background: #218838;
+        }
+
+        .file-delete-btn {
+            padding: 8px 14px;
+            background: #f1425d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+
+        .file-delete-btn:hover {
+            background: #d1374f;
+        }
+
+        .file-list-empty {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .font-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .font-chip {
+            padding: 8px 14px;
+            background: #f4f6ff;
+            border-radius: 999px;
+            font-size: 13px;
+            color: #4a4a4a;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            white-space: nowrap;
+        }
+
+        .font-list-empty {
+            width: 100%;
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 14px;
+        }
+
+        @media (max-width: 1024px) {
+            .layout {
+                flex-direction: column;
+            }
+
+            .side-column {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📄 PPT to PDF 변환기</h1>
+        <p class="subtitle">드래그 앤 드롭 또는 클릭하여 파일을 업로드하세요</p>
+
+        <div class="layout">
+            <div class="main-column">
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📎</div>
+                    <div class="drop-zone-text">파일을 여기에 드롭하세요</div>
+                    <div class="drop-zone-hint">또는 클릭하여 파일 선택</div>
+                    <input type="file" id="fileInput" class="file-input" accept=".ppt,.pptx,.odp">
+                </div>
+
+                <div class="file-info" id="fileInfo">
+                    <div class="file-name" id="fileName"></div>
+                    <div class="file-size" id="fileSize"></div>
+                </div>
+
+                <button class="convert-btn" id="convertBtn">PDF로 변환하기</button>
+
+                <div class="progress" id="progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">변환 중...</div>
+                </div>
+
+                <div class="result" id="result"></div>
+
+                <div class="supported-formats">
+                    <strong>지원 형식:</strong> PPT, PPTX, ODP → PDF
+                </div>
+            </div>
+
+            <div class="side-column">
+                <div class="file-list-section">
+                    <div class="file-list-header">
+                        <div class="file-list-title">📁 변환된 파일 목록</div>
+                        <button class="refresh-btn" id="refreshBtn">🔄 새로고침</button>
+                    </div>
+                    <div class="file-list" id="fileList">
+                        <div class="loading">로딩 중...</div>
+                    </div>
+                </div>
+
+                <div class="fonts-section">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">🅰️ 사용 가능한 폰트</div>
+                            <p class="section-subtitle">
+                                컨테이너에서 감지된 폰트 목록입니다. 필요한 폰트를 <code>fonts/</code> 폴더에 추가한 뒤 컨테이너를 재시작하세요.
+                            </p>
+                        </div>
+                        <div class="section-actions">
+                            <span class="font-count" id="fontsCount">0개</span>
+                            <button class="refresh-btn ghost" id="refreshFontsBtn">🔄 새로고침</button>
+                        </div>
+                    </div>
+                    <div class="font-list" id="fontsList">
+                        <div class="loading">로딩 중...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:9999';
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const convertBtn = document.getElementById('convertBtn');
+        const progress = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const result = document.getElementById('result');
+        const fileList = document.getElementById('fileList');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const fontsList = document.getElementById('fontsList');
+        const fontsCount = document.getElementById('fontsCount');
+        const refreshFontsBtn = document.getElementById('refreshFontsBtn');
+
+        let selectedFile = null;
+
+        // 파일 크기 포맷팅
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // 변환 함수
+        async function convertFile(file, outputFormat = 'pdf') {
+            if (!file) return;
+
+            // UI 업데이트
+            convertBtn.disabled = true;
+            progress.classList.add('show');
+            result.classList.remove('show');
+            progressFill.style.width = '10%';
+            progressText.textContent = '파일 준비 중...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                progressFill.style.width = '30%';
+                progressText.textContent = '파일 업로드 중...';
+
+                const response = await fetch(`${API_URL}/convert?output_format=${outputFormat}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                progressFill.style.width = '60%';
+                progressText.textContent = '변환 중...';
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || `서버 오류: ${response.status}`);
+                }
+
+                progressFill.style.width = '80%';
+                progressText.textContent = '다운로드 준비 중...';
+
+                // PDF 다운로드
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const originalName = file.name.replace(/\.[^/.]+$/, '');
+                a.download = `${originalName}.${outputFormat}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                progressFill.style.width = '100%';
+                progressText.textContent = '완료!';
+                
+                setTimeout(() => {
+                    showResult(`✅ 변환이 완료되었습니다! ${outputFormat.toUpperCase()} 파일이 다운로드되었습니다.`, 'success');
+                    progress.classList.remove('show');
+                    convertBtn.disabled = false;
+                    // 파일 목록 새로고침
+                    loadFileList();
+                }, 500);
+
+            } catch (error) {
+                console.error('변환 오류:', error);
+                showResult(`❌ 변환 실패: ${error.message}`, 'error');
+                progress.classList.remove('show');
+                convertBtn.disabled = false;
+            }
+        }
+
+        // 파일 선택 처리
+        function handleFile(file) {
+            if (!file) return;
+
+            const validExtensions = ['.ppt', '.pptx', '.odp'];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+
+            if (!validExtensions.includes(fileExt)) {
+                showResult('지원하지 않는 파일 형식입니다. PPT, PPTX, ODP 파일만 업로드 가능합니다.', 'error');
+                return;
+            }
+
+            selectedFile = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.classList.add('show');
+            convertBtn.classList.add('show');
+            result.classList.remove('show');
+            
+            // 자동으로 변환 시작
+            convertFile(file, 'pdf');
+        }
+
+        // 드래그 앤 드롭 이벤트
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            handleFile(file);
+        });
+
+        // 변환 버튼 클릭 (재변환용)
+        convertBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            await convertFile(selectedFile, 'pdf');
+        });
+
+        // 결과 메시지 표시
+        function showResult(message, type) {
+            result.textContent = message;
+            result.className = `result ${type} show`;
+        }
+
+        // API 서버 상태 확인 (선택사항)
+        async function checkServer() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if (!response.ok) {
+                    showResult('⚠️ API 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.', 'error');
+                }
+            } catch (error) {
+                // 서버 확인 실패는 조용히 무시 (사용자가 직접 시도할 수 있도록)
+            }
+        }
+
+        // 파일 목록 로드
+        async function loadFileList() {
+            try {
+                fileList.innerHTML = '<div class="loading">로딩 중...</div>';
+                
+                const response = await fetch(`${API_URL}/outputs`);
+                if (!response.ok) {
+                    throw new Error('파일 목록을 가져올 수 없습니다.');
+                }
+                
+                const data = await response.json();
+                
+                if (data.files.length === 0) {
+                    fileList.innerHTML = '<div class="file-list-empty">변환된 파일이 없습니다.</div>';
+                    return;
+                }
+                
+                fileList.innerHTML = data.files.map(file => {
+                    const encodedFilename = encodeURIComponent(file.filename);
+                    const encodedDisplayName = encodeURIComponent(file.original_filename || file.filename);
+                    return `
+                    <div class="file-item">
+                        <div class="file-item-info">
+                            <div class="file-item-name">${escapeHtml(file.original_filename || file.filename)}</div>
+                            <div class="file-item-meta">
+                                ${formatFileSize(file.size)} • ${file.modified_formatted || formatDate(file.modified)}
+                            </div>
+                        </div>
+                        <div class="file-item-actions">
+                            <button class="file-download-btn" onclick="downloadFile('${encodedFilename}')">
+                                다운로드
+                            </button>
+                            <button class="file-delete-btn" onclick="deleteFile('${encodedFilename}', '${encodedDisplayName}')">
+                                삭제
+                            </button>
+                        </div>
+                    </div>
+                `;
+                }).join('');
+                
+            } catch (error) {
+                console.error('파일 목록 로드 오류:', error);
+                fileList.innerHTML = '<div class="file-list-empty">파일 목록을 불러올 수 없습니다.</div>';
+            }
+        }
+
+        // 폰트 목록 로드
+        async function loadFontList() {
+            try {
+                fontsList.innerHTML = '<div class="loading">로딩 중...</div>';
+                const response = await fetch(`${API_URL}/fonts`);
+
+                if (!response.ok) {
+                    throw new Error('폰트 목록을 가져올 수 없습니다.');
+                }
+
+                const data = await response.json();
+                const fonts = data.fonts || [];
+                fontsCount.textContent = `${fonts.length}개`;
+
+                if (!fonts.length) {
+                    fontsList.innerHTML = '<div class="font-list-empty">감지된 폰트가 없습니다.</div>';
+                    return;
+                }
+
+                fontsList.innerHTML = fonts.map(font => `
+                    <span class="font-chip">${escapeHtml(font)}</span>
+                `).join('');
+            } catch (error) {
+                console.error('폰트 목록 로드 오류:', error);
+                fontsList.innerHTML = '<div class="font-list-empty">폰트 목록을 불러올 수 없습니다.</div>';
+                fontsCount.textContent = '0개';
+            }
+        }
+
+        // 파일 다운로드
+        function downloadFile(encodedFilename) {
+            const filename = decodeURIComponent(encodedFilename);
+            window.open(`${API_URL}/download/${encodeURIComponent(filename)}`, '_blank');
+        }
+
+        // 파일 삭제
+        async function deleteFile(encodedFilename, encodedDisplayName) {
+            const filename = decodeURIComponent(encodedFilename);
+            const displayName = decodeURIComponent(encodedDisplayName);
+
+            const confirmed = confirm(`🗑️ "${displayName}" 파일을 삭제할까요?`);
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/outputs/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || '삭제에 실패했습니다.');
+                }
+
+                showResult(`🗑️ ${displayName} 파일을 삭제했습니다.`, 'success');
+                loadFileList();
+            } catch (error) {
+                console.error('파일 삭제 오류:', error);
+                showResult(`❌ 삭제 실패: ${error.message}`, 'error');
+            }
+        }
+
+        // HTML 이스케이프
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 날짜 포맷팅 (한국 시간 yyyy-mm-dd hh:mm:ss)
+        function formatDate(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            
+            // 한국 시간으로 변환 (UTC+9)
+            const kstOffset = 9 * 60; // 9시간을 분으로 변환
+            const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+            const kst = new Date(utc + (kstOffset * 60000));
+            
+            // yyyy-mm-dd hh:mm:ss 형식
+            const year = kst.getFullYear();
+            const month = String(kst.getMonth() + 1).padStart(2, '0');
+            const day = String(kst.getDate()).padStart(2, '0');
+            const hours = String(kst.getHours()).padStart(2, '0');
+            const minutes = String(kst.getMinutes()).padStart(2, '0');
+            const seconds = String(kst.getSeconds()).padStart(2, '0');
+            
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        // 새로고침 버튼 클릭
+        refreshBtn.addEventListener('click', () => {
+            loadFileList();
+        });
+
+        refreshFontsBtn.addEventListener('click', () => {
+            loadFontList();
+        });
+
+        // 페이지 로드 시 서버 확인 및 파일 목록 로드
+        checkServer();
+        loadFileList();
+        loadFontList();
+    </script>
+</body>
+</html>
+
